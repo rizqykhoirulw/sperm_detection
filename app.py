@@ -1,14 +1,18 @@
 import streamlit as st
-import cv2
-import numpy as np
-from ultralytics import YOLO
+try:
+    import cv2
+    import numpy as np
+    from ultralytics import YOLO
+    from PIL import Image
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    import seaborn as sns
+except ImportError as e:
+    st.error(f"Error importing required libraries: {e}")
+    st.stop()
+
 import tempfile
 import os
-from PIL import Image
-import matplotlib.pyplot as plt
-import pandas as pd
-from sklearn.metrics import classification_report, confusion_matrix
-import seaborn as sns
 
 # Set page config
 st.set_page_config(
@@ -17,13 +21,19 @@ st.set_page_config(
     layout="wide"
 )
 
-# Load model
+# Load model dengan error handling
 @st.cache_resource
 def load_model():
-    model = YOLO('best.pt')
-    return model
+    try:
+        model = YOLO('best.pt')
+        return model
+    except Exception as e:
+        st.error(f"Gagal memuat model: {e}")
+        return None
 
 model = load_model()
+if model is None:
+    st.stop()
 
 # Judul aplikasi
 st.title("🔬 Deteksi Abnormalitas Bentuk Kepala Sel Sperma")
@@ -40,19 +50,8 @@ tab1, tab2, tab3 = st.tabs(["Deteksi Gambar", "Evaluasi Model", "Tentang"])
 with tab1:
     st.header("Deteksi pada Gambar Baru")
     
-    # Opsi upload gambar atau pilih sample
-    option = st.radio("Pilih sumber gambar:", ("Upload Gambar", "Gunakan Sample"))
-    
-    if option == "Upload Gambar":
-        uploaded_file = st.file_uploader("Pilih gambar sel sperma...", type=["jpg", "jpeg", "png"])
-    else:
-        sample_files = os.listdir("sample_images") if os.path.exists("sample_images") else []
-        if sample_files:
-            selected_sample = st.selectbox("Pilih sample gambar:", sample_files)
-            uploaded_file = open(os.path.join("sample_images", selected_sample), "rb")
-        else:
-            st.warning("Folder sample_images tidak ditemukan. Silakan upload gambar.")
-            uploaded_file = st.file_uploader("Pilih gambar sel sperma...", type=["jpg", "jpeg", "png"])
+    # Opsi upload gambar
+    uploaded_file = st.file_uploader("Pilih gambar sel sperma...", type=["jpg", "jpeg", "png"])
     
     if uploaded_file is not None:
         # Read image
@@ -67,13 +66,17 @@ with tab1:
         
         # Run prediction
         with st.spinner("Sedang melakukan deteksi..."):
-            results = model.predict(
-                image, 
-                imgsz=640,
-                conf=confidence_threshold,
-                iou=iou_threshold,
-                verbose=False
-            )
+            try:
+                results = model.predict(
+                    image, 
+                    imgsz=640,
+                    conf=confidence_threshold,
+                    iou=iou_threshold,
+                    verbose=False
+                )
+            except Exception as e:
+                st.error(f"Error selama prediksi: {e}")
+                st.stop()
         
         # Draw bounding boxes
         result_image = image.copy()
@@ -126,72 +129,7 @@ with tab1:
 
 with tab2:
     st.header("Evaluasi Model")
-    
-    # Upload multiple images for evaluation
-    st.subheader("Evaluasi pada Multiple Gambar")
-    eval_files = st.file_uploader("Pilih gambar untuk evaluasi (multiple)", 
-                                 type=["jpg", "jpeg", "png"], 
-                                 accept_multiple_files=True)
-    
-    if eval_files and st.button("Jalankan Evaluasi"):
-        all_detections = []
-        gt_data = []  # Anda perlu memiliki ground truth untuk evaluasi lengkap
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        for i, uploaded_file in enumerate(eval_files):
-            status_text.text(f"Memproses gambar {i+1}/{len(eval_files)}")
-            
-            # Process image
-            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-            image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            
-            # Run prediction
-            results = model.predict(
-                image, 
-                imgsz=640,
-                conf=confidence_threshold,
-                iou=iou_threshold,
-                verbose=False
-            )
-            
-            # Collect detections
-            for result in results:
-                for box in result.boxes:
-                    cls_id = int(box.cls[0].item())
-                    label = model.names[cls_id]
-                    conf = box.conf[0].item()
-                    
-                    all_detections.append({
-                        "Image": uploaded_file.name,
-                        "Label": label,
-                        "Confidence": conf
-                    })
-            
-            progress_bar.progress((i + 1) / len(eval_files))
-        
-        status_text.text("Evaluasi selesai!")
-        
-        if all_detections:
-            # Create summary
-            df = pd.DataFrame(all_detections)
-            summary = df.groupby("Label").agg(
-                Count=("Label", "count"),
-                Avg_Confidence=("Confidence", "mean")
-            ).reset_index()
-            
-            st.subheader("Ringkasan Evaluasi")
-            st.dataframe(summary)
-            
-            # Display chart
-            fig, ax = plt.subplots()
-            summary.set_index("Label")["Count"].plot(kind="bar", ax=ax)
-            ax.set_ylabel("Jumlah Deteksi")
-            ax.set_title("Distribusi Deteksi")
-            st.pyplot(fig)
-        else:
-            st.warning("Tidak ada deteksi pada gambar-gambar yang diupload.")
+    st.info("Fitur evaluasi memerlukan ground truth labels untuk bekerja dengan baik. Fitur ini dalam pengembangan.")
 
 with tab3:
     st.header("Tentang Aplikasi")
@@ -199,10 +137,9 @@ with tab3:
     Aplikasi ini dibuat untuk mendeteksi abnormalitas pada bentuk kepala sel sperma menggunakan model YOLOv8.
     
     ### Cara Penggunaan:
-    1. Pada tab **Deteksi Gambar**, upload gambar atau pilih sample yang tersedia
+    1. Pada tab **Deteksi Gambar**, upload gambar sperma
     2. Atur threshold confidence dan IOU sesuai kebutuhan di sidebar
     3. Lihat hasil deteksi dan statistiknya
-    4. Gunakan tab **Evaluasi Model** untuk menguji model pada multiple gambar
     
     ### Informasi Model:
     - Architecture: YOLOv8

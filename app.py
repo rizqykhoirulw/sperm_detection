@@ -1,16 +1,18 @@
 import streamlit as st
 try:
+    # Coba impor OpenCV terlebih dahulu
     import cv2
-    import numpy as np
-    from ultralytics import YOLO
-    from PIL import Image
-    import matplotlib.pyplot as plt
-    import pandas as pd
-    import seaborn as sns
+    OPENCV_AVAILABLE = True
 except ImportError as e:
-    st.error(f"Error importing required libraries: {e}")
-    st.stop()
+    st.error(f"OpenCV not available: {e}")
+    OPENCV_AVAILABLE = False
 
+import numpy as np
+from ultralytics import YOLO
+from PIL import Image, ImageDraw, ImageFont
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 import tempfile
 import os
 
@@ -35,6 +37,27 @@ model = load_model()
 if model is None:
     st.stop()
 
+# Fungsi untuk menggambar bounding box dengan Pillow (fallback jika OpenCV tidak tersedia)
+def draw_bboxes_pillow(image, detections):
+    draw = ImageDraw.Draw(image)
+    
+    for detection in detections:
+        label = detection["Label"]
+        conf = detection["Confidence"]
+        x1, y1, x2, y2 = detection["X1"], detection["Y1"], detection["X2"], detection["Y2"]
+        
+        # Tentukan warna berdasarkan label
+        color = "green" if label == "normal" else "red"
+        
+        # Gambar bounding box
+        draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
+        
+        # Tambahkan teks label
+        label_text = f"{label} {conf:.2f}"
+        draw.text((x1, y1-20), label_text, fill=color)
+    
+    return image
+
 # Judul aplikasi
 st.title("🔬 Deteksi Abnormalitas Bentuk Kepala Sel Sperma")
 st.markdown("Aplikasi ini menggunakan model YOLOv8 untuk mendeteksi abnormalitas pada bentuk kepala sel sperma")
@@ -54,21 +77,20 @@ with tab1:
     uploaded_file = st.file_uploader("Pilih gambar sel sperma...", type=["jpg", "jpeg", "png"])
     
     if uploaded_file is not None:
-        # Read image
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Baca gambar dengan Pillow
+        image_pil = Image.open(uploaded_file)
+        image_np = np.array(image_pil)
         
         # Display original image
         col1, col2 = st.columns(2)
         with col1:
-            st.image(image_rgb, caption="Gambar Asli", use_column_width=True)
+            st.image(image_pil, caption="Gambar Asli", use_column_width=True)
         
         # Run prediction
         with st.spinner("Sedang melakukan deteksi..."):
             try:
                 results = model.predict(
-                    image, 
+                    image_np, 
                     imgsz=640,
                     conf=confidence_threshold,
                     iou=iou_threshold,
@@ -78,8 +100,7 @@ with tab1:
                 st.error(f"Error selama prediksi: {e}")
                 st.stop()
         
-        # Draw bounding boxes
-        result_image = image.copy()
+        # Process detections
         detections = []
         
         for result in results:
@@ -88,12 +109,6 @@ with tab1:
                 conf = box.conf[0].item()
                 cls_id = int(box.cls[0].item())
                 label = model.names[cls_id]
-                
-                # Draw bounding box
-                color = (0, 255, 0) if label == "normal" else (0, 0, 255)
-                cv2.rectangle(result_image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-                cv2.putText(result_image, f"{label} {conf:.2f}", (int(x1), int(y1)-10), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                 
                 detections.append({
                     "Label": label,
@@ -104,10 +119,28 @@ with tab1:
                     "Y2": y2
                 })
         
+        # Gambar bounding box
+        if OPENCV_AVAILABLE:
+            # Gunakan OpenCV jika tersedia
+            result_image = image_np.copy()
+            for detection in detections:
+                label = detection["Label"]
+                conf = detection["Confidence"]
+                x1, y1, x2, y2 = detection["X1"], detection["Y1"], detection["X2"], detection["Y2"]
+                
+                color = (0, 255, 0) if label == "normal" else (0, 0, 255)
+                cv2.rectangle(result_image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                cv2.putText(result_image, f"{label} {conf:.2f}", (int(x1), int(y1)-10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            
+            result_image_pil = Image.fromarray(cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB))
+        else:
+            # Gunakan Pillow sebagai fallback
+            result_image_pil = draw_bboxes_pillow(image_pil.copy(), detections)
+        
         # Display result image
-        result_image_rgb = cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB)
         with col2:
-            st.image(result_image_rgb, caption="Hasil Deteksi", use_column_width=True)
+            st.image(result_image_pil, caption="Hasil Deteksi", use_column_width=True)
         
         # Show detection results
         if detections:

@@ -9,9 +9,10 @@ streamlit>=1.32.2
 opencv-python-headless==4.10.0.84
 Pillow>=11.0.0
 pandas>=2.2.2
-numpy==2.0.0
+numpy>=1.25.0,<2.0
 matplotlib==3.8.3
 seaborn==0.13.2
+
 
 
 

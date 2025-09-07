@@ -5,11 +5,10 @@ torch>=2.3.0
 torchvision>=0.18.0   
 torchaudio>=2.3.0     
 
-streamlit==1.32.0
+streamlit>=1.32.2,<1.49
 opencv-python-headless==4.10.0.84
-Pillow>=10.4.0,<11
+Pillow>=10.4.0,<11 
 pandas>=2.2.2
 numpy>=1.25.0,<2.0
 matplotlib==3.8.3
 seaborn==0.13.2
-

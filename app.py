@@ -1,20 +1,39 @@
 import streamlit as st
-try:
-    # Coba impor OpenCV terlebih dahulu
-    import cv2
-    OPENCV_AVAILABLE = True
-except ImportError as e:
-    st.error(f"OpenCV not available: {e}")
-    OPENCV_AVAILABLE = False
-
 import numpy as np
-from ultralytics import YOLO
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import tempfile
 import os
+
+# Coba impor OpenCV dengan error handling
+try:
+    import cv2
+    OPENCV_AVAILABLE = True
+except ImportError as e:
+    st.error(f"OpenCV tidak tersedia: {e}")
+    OPENCV_AVAILABLE = False
+except OSError as e:
+    st.warning(f"OpenCV mengalami masalah sistem: {e}")
+    OPENCV_AVAILABLE = False
+
+# Coba impor Ultralytics dengan error handling
+try:
+    from ultralytics import YOLO
+    ULTRALYTICS_AVAILABLE = True
+except ImportError as e:
+    st.error(f"Ultralytics tidak tersedia: {e}")
+    ULTRALYTICS_AVAILABLE = False
+except OSError as e:
+    if "libGL.so.1" in str(e):
+        st.warning("""
+        Terjadi masalah dengan dependensi sistem. Coba solusi berikut:
+        1. Pastikan file packages.txt berisi 'libgl1'
+        2. Tunggu beberapa menit dan refresh halaman
+        3. Jika masih error, coba deploy ulang aplikasi
+        """)
+    ULTRALYTICS_AVAILABLE = False
 
 # Set page config
 st.set_page_config(
@@ -26,6 +45,9 @@ st.set_page_config(
 # Load model dengan error handling
 @st.cache_resource
 def load_model():
+    if not ULTRALYTICS_AVAILABLE:
+        return None
+        
     try:
         model = YOLO('best.pt')
         return model
@@ -33,11 +55,24 @@ def load_model():
         st.error(f"Gagal memuat model: {e}")
         return None
 
+# Tampilkan pesan error jika library tidak tersedia
+if not ULTRALYTICS_AVAILABLE:
+    st.error("""
+    Aplikasi tidak dapat dijalankan karena dependensi yang tidak terpenuhi.
+    Silakan coba lagi dalam beberapa menit atau hubungi administrator.
+    """)
+    st.stop()
+
 model = load_model()
 if model is None:
     st.stop()
 
-# Fungsi untuk menggambar bounding box dengan Pillow (fallback jika OpenCV tidak tersedia)
+# Fungsi untuk memproses gambar tanpa OpenCV
+def process_image_without_opencv(uploaded_file):
+    image = Image.open(uploaded_file)
+    return np.array(image), image
+
+# Fungsi untuk menggambar bounding box dengan Pillow
 def draw_bboxes_pillow(image, detections):
     draw = ImageDraw.Draw(image)
     
@@ -77,9 +112,17 @@ with tab1:
     uploaded_file = st.file_uploader("Pilih gambar sel sperma...", type=["jpg", "jpeg", "png"])
     
     if uploaded_file is not None:
-        # Baca gambar dengan Pillow
-        image_pil = Image.open(uploaded_file)
-        image_np = np.array(image_pil)
+        # Baca gambar
+        if OPENCV_AVAILABLE:
+            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+            image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image_pil = Image.fromarray(image_rgb)
+            # Kembali ke awal file untuk penggunaan ulang
+            uploaded_file.seek(0)
+        else:
+            image_np, image_pil = process_image_without_opencv(uploaded_file)
+            image_rgb = image_np
         
         # Display original image
         col1, col2 = st.columns(2)
@@ -90,7 +133,7 @@ with tab1:
         with st.spinner("Sedang melakukan deteksi..."):
             try:
                 results = model.predict(
-                    image_np, 
+                    image_rgb, 
                     imgsz=640,
                     conf=confidence_threshold,
                     iou=iou_threshold,
@@ -122,7 +165,7 @@ with tab1:
         # Gambar bounding box
         if OPENCV_AVAILABLE:
             # Gunakan OpenCV jika tersedia
-            result_image = image_np.copy()
+            result_image = image.copy()
             for detection in detections:
                 label = detection["Label"]
                 conf = detection["Confidence"]
@@ -133,7 +176,8 @@ with tab1:
                 cv2.putText(result_image, f"{label} {conf:.2f}", (int(x1), int(y1)-10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
             
-            result_image_pil = Image.fromarray(cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB))
+            result_image_rgb = cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB)
+            result_image_pil = Image.fromarray(result_image_rgb)
         else:
             # Gunakan Pillow sebagai fallback
             result_image_pil = draw_bboxes_pillow(image_pil.copy(), detections)

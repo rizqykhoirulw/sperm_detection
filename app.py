@@ -52,7 +52,7 @@ IOU_THRESHOLD = 0.65
 # Ambang batas untuk heuristik "gambar bukan sel sperma"
 # Jika deteksi tidak ada sama sekali, atau confidence tertinggi di bawah ini,
 # aplikasi akan menganggap gambar kemungkinan besar bukan citra sel sperma.
-MIN_VALID_CONFIDENCE = 0.65
+MIN_VALID_CONFIDENCE = 0.5
 MIN_VALID_DETECTIONS = 1
 
 # Load model dengan error handling
@@ -123,145 +123,114 @@ def is_likely_not_sperm_image(detections):
 st.title("🔬 Deteksi Abnormalitas Bentuk Kepala Sel Sperma")
 st.markdown("Aplikasi ini menggunakan model YOLOv8 untuk mendeteksi abnormalitas pada bentuk kepala sel sperma")
 
-# Tab untuk berbagai fungsi
-tab1, tab2, tab3 = st.tabs(["Deteksi Gambar", "Evaluasi Model", "Tentang"])
+st.header("Deteksi pada Gambar Baru")
 
-with tab1:
-    st.header("Deteksi pada Gambar Baru")
+# Opsi upload gambar
+uploaded_file = st.file_uploader("Pilih gambar sel sperma...", type=["jpg", "jpeg", "png"])
 
-    # Opsi upload gambar
-    uploaded_file = st.file_uploader("Pilih gambar sel sperma...", type=["jpg", "jpeg", "png"])
+if uploaded_file is not None:
+    # Baca gambar
+    if OPENCV_AVAILABLE:
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image_pil = Image.fromarray(image_rgb)
+        # Kembali ke awal file untuk penggunaan ulang
+        uploaded_file.seek(0)
+    else:
+        image_np, image_pil = process_image_without_opencv(uploaded_file)
+        image_rgb = image_np
 
-    if uploaded_file is not None:
-        # Baca gambar
-        if OPENCV_AVAILABLE:
-            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-            image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image_pil = Image.fromarray(image_rgb)
-            # Kembali ke awal file untuk penggunaan ulang
-            uploaded_file.seek(0)
-        else:
-            image_np, image_pil = process_image_without_opencv(uploaded_file)
-            image_rgb = image_np
+    # Lebar gambar (px) untuk tampilan Gambar Asli & Hasil Deteksi.
+    # Ubah angka ini kalau ingin gambar lebih besar/kecil lagi.
+    DISPLAY_IMAGE_WIDTH = 450
 
-        # Lebar gambar (px) untuk tampilan Gambar Asli & Hasil Deteksi.
-        # Ubah angka ini kalau ingin gambar lebih besar/kecil lagi.
-        DISPLAY_IMAGE_WIDTH = 450
+    # Display original image
+    col1, col2 = st.columns(2)
+    with col1:
+        st.image(image_pil, caption="Gambar Asli", width=DISPLAY_IMAGE_WIDTH)
 
-        # Display original image
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(image_pil, caption="Gambar Asli", width=DISPLAY_IMAGE_WIDTH)
-
-        # Run prediction
-        with st.spinner("Sedang melakukan deteksi..."):
-            try:
-                results = model.predict(
-                    image_rgb,
-                    imgsz=640,
-                    conf=CONFIDENCE_THRESHOLD,
-                    iou=IOU_THRESHOLD,
-                    verbose=False
-                )
-            except Exception as e:
-                st.error(f"Error selama prediksi: {e}")
-                st.stop()
-
-        # Process detections
-        detections = []
-
-        for result in results:
-            for box in result.boxes:
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                conf = box.conf[0].item()
-                cls_id = int(box.cls[0].item())
-                label = model.names[cls_id]
-
-                detections.append({
-                    "Label": label,
-                    "Confidence": conf,
-                    "X1": x1,
-                    "Y1": y1,
-                    "X2": x2,
-                    "Y2": y2
-                })
-
-        # Cek apakah gambar ini kemungkinan besar bukan citra sel sperma
-        if is_likely_not_sperm_image(detections):
-            with col2:
-                st.image(image_pil, caption="Gambar Asli (tidak ada deteksi valid)", width=DISPLAY_IMAGE_WIDTH)
-            st.warning(
-                "⚠️ Gambar yang diunggah kemungkinan besar **bukan citra sel sperma**. "
-                "Model tidak menemukan objek yang cukup mirip dengan sel sperma pada gambar ini. "
-                "Silakan unggah gambar mikroskopis sel sperma yang sesuai."
+    # Run prediction
+    with st.spinner("Sedang melakukan deteksi..."):
+        try:
+            results = model.predict(
+                image_rgb,
+                imgsz=640,
+                conf=CONFIDENCE_THRESHOLD,
+                iou=IOU_THRESHOLD,
+                verbose=False
             )
+        except Exception as e:
+            st.error(f"Error selama prediksi: {e}")
+            st.stop()
+
+    # Process detections
+    detections = []
+
+    for result in results:
+        for box in result.boxes:
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            conf = box.conf[0].item()
+            cls_id = int(box.cls[0].item())
+            label = model.names[cls_id]
+
+            detections.append({
+                "Label": label,
+                "Confidence": conf,
+                "X1": x1,
+                "Y1": y1,
+                "X2": x2,
+                "Y2": y2
+            })
+
+    # Cek apakah gambar ini kemungkinan besar bukan citra sel sperma
+    if is_likely_not_sperm_image(detections):
+        with col2:
+            st.image(image_pil, caption="Gambar Asli (tidak ada deteksi valid)", width=DISPLAY_IMAGE_WIDTH)
+        st.warning(
+            "⚠️ Gambar yang diunggah kemungkinan besar **bukan citra sel sperma**. "
+            "Model tidak menemukan objek yang cukup mirip dengan sel sperma pada gambar ini. "
+            "Silakan unggah gambar mikroskopis sel sperma yang sesuai."
+        )
+    else:
+        # Gambar bounding box
+        if OPENCV_AVAILABLE:
+            # Gunakan OpenCV jika tersedia
+            result_image = image.copy()
+            for detection in detections:
+                label = detection["Label"]
+                conf = detection["Confidence"]
+                x1, y1, x2, y2 = detection["X1"], detection["Y1"], detection["X2"], detection["Y2"]
+
+                color = (0, 255, 0) if label == "normal" else (0, 0, 255)
+                cv2.rectangle(result_image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                cv2.putText(result_image, f"{label} {conf:.2f}", (int(x1), int(y1)-10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+            result_image_rgb = cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB)
+            result_image_pil = Image.fromarray(result_image_rgb)
         else:
-            # Gambar bounding box
-            if OPENCV_AVAILABLE:
-                # Gunakan OpenCV jika tersedia
-                result_image = image.copy()
-                for detection in detections:
-                    label = detection["Label"]
-                    conf = detection["Confidence"]
-                    x1, y1, x2, y2 = detection["X1"], detection["Y1"], detection["X2"], detection["Y2"]
+            # Gunakan Pillow sebagai fallback
+            result_image_pil = draw_bboxes_pillow(image_pil.copy(), detections)
 
-                    color = (0, 255, 0) if label == "normal" else (0, 0, 255)
-                    cv2.rectangle(result_image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-                    cv2.putText(result_image, f"{label} {conf:.2f}", (int(x1), int(y1)-10),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        # Display result image
+        with col2:
+            st.image(result_image_pil, caption="Hasil Deteksi", width=DISPLAY_IMAGE_WIDTH)
 
-                result_image_rgb = cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB)
-                result_image_pil = Image.fromarray(result_image_rgb)
-            else:
-                # Gunakan Pillow sebagai fallback
-                result_image_pil = draw_bboxes_pillow(image_pil.copy(), detections)
+        # Show detection results
+        st.subheader("Hasil Deteksi")
+        df = pd.DataFrame(detections)
+        st.dataframe(df)
 
-            # Display result image
-            with col2:
-                st.image(result_image_pil, caption="Hasil Deteksi", width=DISPLAY_IMAGE_WIDTH)
+        # Count by class
+        st.subheader("Statistik Deteksi")
+        col1, col2, col3 = st.columns(3)
+        normal_count = len(df[df["Label"] == "normal"])
+        abnormal_count = len(df[df["Label"] == "anormal"])
 
-            # Show detection results
-            st.subheader("Hasil Deteksi")
-            df = pd.DataFrame(detections)
-            st.dataframe(df)
-
-            # Count by class
-            st.subheader("Statistik Deteksi")
-            col1, col2, col3 = st.columns(3)
-            normal_count = len(df[df["Label"] == "normal"])
-            abnormal_count = len(df[df["Label"] == "anormal"])
-
-            col1.metric("Normal", normal_count)
-            col2.metric("Abnormal", abnormal_count)
-            col3.metric("Total", len(df))
-
-with tab2:
-    st.header("Evaluasi Model")
-    st.info("Fitur evaluasi memerlukan ground truth labels untuk bekerja dengan baik. Fitur ini dalam pengembangan.")
-
-with tab3:
-    st.header("Tentang Aplikasi")
-    st.markdown("""
-    Aplikasi ini dibuat untuk mendeteksi abnormalitas pada bentuk kepala sel sperma menggunakan model YOLOv8.
-
-    ### Cara Penggunaan:
-    1. Pada tab **Deteksi Gambar**, upload gambar sperma
-    2. Lihat hasil deteksi dan statistiknya
-
-    ### Informasi Model:
-    - Architecture: YOLOv8
-    - Classes: Normal, Abnormal
-    - Input size: 640x640 pixels
-    - Confidence threshold: {conf}
-    - IOU threshold: {iou}
-    """.format(conf=CONFIDENCE_THRESHOLD, iou=IOU_THRESHOLD))
-
-    # Display model information
-    st.subheader("Informasi Model")
-    st.text(f"Model: YOLOv8")
-    st.text(f"Jumlah kelas: {len(model.names)}")
-    st.text(f"Nama kelas: {list(model.names.values())}")
+        col1.metric("Normal", normal_count)
+        col2.metric("Abnormal", abnormal_count)
+        col3.metric("Total", len(df))
 
 # Footer
 st.markdown("---")

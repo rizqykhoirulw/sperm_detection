@@ -52,7 +52,7 @@ IOU_THRESHOLD = 0.65
 # Ambang batas untuk heuristik "gambar bukan sel sperma"
 # Jika deteksi tidak ada sama sekali, atau confidence tertinggi di bawah ini,
 # aplikasi akan menganggap gambar kemungkinan besar bukan citra sel sperma.
-MIN_VALID_CONFIDENCE = 0.5
+MIN_VALID_CONFIDENCE = 0.65
 MIN_VALID_DETECTIONS = 1
 
 # Load model dengan error handling

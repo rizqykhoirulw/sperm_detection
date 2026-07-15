@@ -145,10 +145,14 @@ with tab1:
             image_np, image_pil = process_image_without_opencv(uploaded_file)
             image_rgb = image_np
 
+        # Lebar gambar (px) untuk tampilan Gambar Asli & Hasil Deteksi.
+        # Ubah angka ini kalau ingin gambar lebih besar/kecil lagi.
+        DISPLAY_IMAGE_WIDTH = 450
+
         # Display original image
         col1, col2 = st.columns(2)
         with col1:
-            st.image(image_pil, caption="Gambar Asli", use_column_width=True)
+            st.image(image_pil, caption="Gambar Asli", width=DISPLAY_IMAGE_WIDTH)
 
         # Run prediction
         with st.spinner("Sedang melakukan deteksi..."):
@@ -186,7 +190,7 @@ with tab1:
         # Cek apakah gambar ini kemungkinan besar bukan citra sel sperma
         if is_likely_not_sperm_image(detections):
             with col2:
-                st.image(image_pil, caption="Gambar Asli (tidak ada deteksi valid)", use_column_width=True)
+                st.image(image_pil, caption="Gambar Asli (tidak ada deteksi valid)", width=DISPLAY_IMAGE_WIDTH)
             st.warning(
                 "⚠️ Gambar yang diunggah kemungkinan besar **bukan citra sel sperma**. "
                 "Model tidak menemukan objek yang cukup mirip dengan sel sperma pada gambar ini. "
@@ -215,7 +219,7 @@ with tab1:
 
             # Display result image
             with col2:
-                st.image(result_image_pil, caption="Hasil Deteksi", use_column_width=True)
+                st.image(result_image_pil, caption="Hasil Deteksi", width=DISPLAY_IMAGE_WIDTH)
 
             # Show detection results
             st.subheader("Hasil Deteksi")
